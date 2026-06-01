@@ -37,13 +37,25 @@ public partial class WeaponPaints
 
 				if (WeaponSync != null)
 				{
-					_ = Task.Run(async () => await WeaponSync.GetPlayerData(playerInfo));
+					// Load the latest data from the database BEFORE refreshing the weapons.
+					// Previously GetPlayerData was fire-and-forget, so RefreshWeapons ran with
+					// the stale cache and the player had to type !wp twice. Await the load and
+					// marshal the refresh back to the main thread via Server.NextFrame.
+					_ = Task.Run(async () =>
+					{
+						await WeaponSync.GetPlayerData(playerInfo);
 
-					GivePlayerGloves(player);
-					RefreshWeapons(player);
-					GivePlayerAgent(player);
-					GivePlayerMusicKit(player);
-					AddTimer(0.15f, () => GivePlayerPin(player));
+						Server.NextFrame(() =>
+						{
+							if (player == null || !player.IsValid) return;
+
+							GivePlayerGloves(player);
+							RefreshWeapons(player);
+							GivePlayerAgent(player);
+							GivePlayerMusicKit(player);
+							AddTimer(0.15f, () => GivePlayerPin(player));
+						});
+					});
 				}
 
 				if (!string.IsNullOrEmpty(Localizer["wp_command_refresh_done"]))
