@@ -144,30 +144,23 @@ namespace WeaponPaints
 			if (!HasChangedPaint(player, weaponDefIndex, out var weaponInfo) || weaponInfo == null ||
 			    weaponInfo.Stickers.Count <= 0) return;
 			
-			// The engine only re-renders sticker decals when the weapon's wear value changes.
-			// The old code increased wear by 0.001 every refresh, which made the in-game float
-			// drift upward forever and never resync to the real value (the cache only ever grew
-			// and was kept until disconnect). Instead, oscillate by a tiny amount AROUND the real
-			// wear: the value still changes every refresh (so stickers re-render), but it stays
-			// centered on the true float and is recomputed from the fresh DB value every time, so
-			// editing the wear on the website resyncs immediately.
-			const float jitter = 0.0005f;
+			// The engine only re-renders sticker decals when the weapon's wear value changes,
+			// so nudge it up by a tiny amount each refresh (upstream behaviour). A previous
+			// attempt oscillated the wear around the real value to also fix the float drift,
+			// but pushing the wear below the real value / toward 0 made stickers fail to render
+			// (they flickered/disappeared on alternate !wp). Keep the safe monotonic increment.
+			float wearIncrement = 0.001f;
 			float currentWear = weaponInfo.Wear;
 
 			var playerWear = _temporaryPlayerWeaponWear.GetOrAdd(player.Slot, _ => new ConcurrentDictionary<int, float>());
 
-			float jitteredWear = playerWear.AddOrUpdate(
+			float incrementedWear = playerWear.AddOrUpdate(
 				weaponDefIndex,
-				Math.Clamp(currentWear + jitter, 0f, 1f),
-				(_, oldWear) =>
-				{
-					// Flip to the opposite side of the real wear each refresh.
-					float target = oldWear > currentWear ? currentWear - jitter : currentWear + jitter;
-					return Math.Clamp(target, 0f, 1f);
-				}
+				currentWear + wearIncrement,
+				(_, oldWear) => Math.Min(oldWear + wearIncrement, 1.0f)
 			);
 
-			weapon.FallbackWear = jitteredWear;
+			weapon.FallbackWear = incrementedWear;
 		}
 
 		private void SetStickers(CCSPlayerController? player, CBasePlayerWeapon weapon)
