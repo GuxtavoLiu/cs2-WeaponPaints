@@ -125,7 +125,9 @@ namespace WeaponPaints
 				return;
 
 			if (weaponInfo.KeyChain != null) SetKeychain(player, weapon);
-			if (weaponInfo.Stickers.Count > 0) SetStickers(player, weapon);
+			// Always call SetStickers (even with no stickers) so it clears every slot - otherwise
+			// removed stickers keep rendering on the client (unset slots aren't networked).
+			SetStickers(player, weapon);
 
 			skinInfo = SkinsList
 				.Where(w => 
@@ -180,6 +182,16 @@ namespace WeaponPaints
 			if (!HasChangedPaint(player ,weaponDefIndex, out var weaponInfo) || weaponInfo == null)
 				return;
 
+			// Clear all 5 sticker slots first. Source 2 only networks attributes that are explicitly
+			// written, so a slot we leave unset keeps its previously-rendered decal on the client
+			// (removed stickers stay visible in-game). Writing id 0 networks the slot as empty; the
+			// loop below then re-sets the slots that still have a sticker.
+			for (int i = 0; i <= 4; i++)
+			{
+				CAttributeListSetOrAddAttributeValueByName.Invoke(weapon.AttributeManager.Item.NetworkedDynamicAttributes.Handle,
+					$"sticker slot {i} id", ViewAsFloat(0u));
+			}
+
 			foreach (var sticker in weaponInfo.Stickers)
 			{
 				int stickerSlot = weaponInfo.Stickers.IndexOf(sticker);
@@ -201,7 +213,8 @@ namespace WeaponPaints
 					$"sticker slot {stickerSlot} rotation", sticker.Rotation);
 			}
 
-			if (_temporaryPlayerWeaponWear.TryGetValue(player.Slot, out var playerWear) &&
+			if (weaponInfo.Stickers.Count > 0 &&
+				_temporaryPlayerWeaponWear.TryGetValue(player.Slot, out var playerWear) &&
 				playerWear.TryGetValue(weaponDefIndex, out float storedWear))
 			{
 				weapon.FallbackWear = storedWear;
